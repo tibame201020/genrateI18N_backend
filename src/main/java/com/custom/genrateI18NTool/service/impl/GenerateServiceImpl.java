@@ -10,6 +10,10 @@ import org.springframework.stereotype.Service;
 import java.io.File;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.stream.Collectors;
 
 import static com.custom.genrateI18NTool.constant.Tag.*;
 
@@ -30,10 +34,22 @@ public class GenerateServiceImpl implements GenerateService {
         StringBuilder localDefaultStr = new StringBuilder(LOCALE_TITLE.getValue(fileName));
         StringBuilder localeEnStr = new StringBuilder(LOCALE_TITLE.getValue(fileName));
 
-        for (ReplaceTarget replaceTarget : replaceTargets) {
+        List<ReplaceTarget> replaceTargetList =
+                Arrays.stream(replaceTargets)
+                        .sorted((o1, o2) -> o2.getTargetStr().length() - o1.getTargetStr().length())
+                        .collect(Collectors.toList());
+
+        if (replaceTargetList.isEmpty()) {
+            return null;
+        }
+        for (ReplaceTarget replaceTarget : replaceTargetList) {
             String targetStr = replaceTarget.getTargetStr();
             String key = S_TEXTFIELD.getValue(replaceTarget.getKey());
+            String preContent = fileContent;
             fileContent = fileContent.replace(targetStr, key);
+            if (preContent.equals(fileContent)) {
+                continue;
+            }
             localDefaultStr = buildLocaleStr(localDefaultStr, replaceTarget.getKey(), targetStr, false);
             localeEnStr = buildLocaleStr(localeEnStr, replaceTarget.getKey(), targetStr, true);
         }
@@ -41,14 +57,20 @@ public class GenerateServiceImpl implements GenerateService {
         transResult.setFileContent(fileContent);
         transResult.setDefaultLocalePathContent(localDefaultStr.toString());
         transResult.setEnLocalePathContent(localeEnStr.toString());
+        if (localDefaultStr.toString().replaceAll(LOCALE_TITLE.getValue(fileName), "").trim().equals("")) {
+            return null;
+        }
 
         return transResult;
     }
 
     @Override
     public TransFile preview(TransFile transFile) {
-        transFile.setContent(getTransFileContent(transFile.getPath(), transFile.getCharset()));
-        return transFile;
+        if (new File(transFile.getPath()).isFile()) {
+            transFile.setContent(getTransFileContent(transFile.getPath(), transFile.getCharset()));
+            return transFile;
+        }
+        return null;
     }
 
     @Override
@@ -67,9 +89,31 @@ public class GenerateServiceImpl implements GenerateService {
         return result;
     }
 
+    @Override
+    public List<String> getFileLists(TransResult transResult) {
+        if (new File(transResult.getFilePath()).isDirectory()) {
+            return getFileLists(transResult.getFilePath());
+        }
+        return null;
+    }
+
+    private List<String> getFileLists(String filePath) {
+        try {
+            List<String> fileLists = new ArrayList<>();
+            File file = new File(filePath);
+            File[] files = file.listFiles();
+            for (File childFile : files) {
+                fileLists.add(childFile.getAbsolutePath());
+            }
+            return fileLists;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     private boolean writeFile(String filePath, String content, boolean append) {
         try {
-            FileUtils.write(getFile(filePath), content, StandardCharsets.UTF_8, append);
+            FileUtils.writeStringToFile(getFile(filePath), content, StandardCharsets.UTF_8, append);
             return true;
         } catch (Exception e) {
             return false;
@@ -118,7 +162,7 @@ public class GenerateServiceImpl implements GenerateService {
             File file = new File(filepath);
             return FileUtils.readFileToString(file, charset);
         } catch (Exception e) {
-            throw new RuntimeException("read original file failed");
+            return null;
         }
     }
 

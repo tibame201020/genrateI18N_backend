@@ -8,6 +8,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/api")
 public class GenerateController {
@@ -27,5 +29,10 @@ public class GenerateController {
     @RequestMapping("commitChange")
     public boolean commitChange(@RequestBody TransResult transResult) {
         return generateService.commitChange(transResult);
+    }
+
+    @RequestMapping("getFileLists")
+    public List<String> getFileLists(@RequestBody TransResult transResult) {
+        return generateService.getFileLists(transResult);
     }
 }
