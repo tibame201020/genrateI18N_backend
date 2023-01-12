@@ -46,8 +46,9 @@ public class GenerateServiceImpl implements GenerateService {
     }
 
     @Override
-    public String preview(TransFile transFile) {
-        return getTransFileContent(transFile.getPath(), transFile.getCharset());
+    public TransFile preview(TransFile transFile) {
+        transFile.setContent(getTransFileContent(transFile.getPath(), transFile.getCharset()));
+        return transFile;
     }
 
     @Override

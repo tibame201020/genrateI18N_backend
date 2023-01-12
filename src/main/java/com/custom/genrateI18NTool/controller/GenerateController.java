@@ -15,7 +15,7 @@ public class GenerateController {
     private GenerateService generateService;
 
     @RequestMapping("preview")
-    public String preview(TransFile transFile) {
+    public TransFile preview(@RequestBody TransFile transFile) {
         return generateService.preview(transFile);
     }
 
@@ -25,7 +25,7 @@ public class GenerateController {
     }
 
     @RequestMapping("commitChange")
-    public boolean commitChange(TransResult transResult) {
+    public boolean commitChange(@RequestBody TransResult transResult) {
         return generateService.commitChange(transResult);
     }
 }
