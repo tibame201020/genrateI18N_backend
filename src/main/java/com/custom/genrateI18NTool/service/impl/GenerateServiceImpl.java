@@ -5,6 +5,7 @@ import com.custom.genrateI18NTool.model.TransFile;
 import com.custom.genrateI18NTool.model.TransResult;
 import com.custom.genrateI18NTool.service.GenerateService;
 import org.apache.commons.io.FileUtils;
+import org.apache.commons.text.StringEscapeUtils;
 import org.springframework.stereotype.Service;
 
 import java.io.File;
@@ -129,16 +130,10 @@ public class GenerateServiceImpl implements GenerateService {
         return stringBuilder.append(key).append("=").append(value).append("\n");
     }
 
-    private String transToUnicode(String value) {
-        StringBuilder unicode = new StringBuilder();
-
-        for (int i = 0; i < value.length(); i++) {
-            char c = value.charAt(i);
-            unicode.append("\\u").append(Integer.toHexString(c));
-        }
-
-        return unicode.toString();
+    private String transToUnicode(String str) {
+        return StringEscapeUtils.escapeJava(str);
     }
+
 
     private File getFile(String path) {
         File file = new File(path);
