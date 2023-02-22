@@ -162,7 +162,13 @@ public class GenerateServiceImpl implements GenerateService {
 
                         String newLine = fileLine.replaceFirst(targetStr, key);
                         while (newLine.contains(targetStr) && !(isBrokenStr(newLine, targetStr) || isInStrutsTag(newLine, targetStr))) {
-                            newLine = fileLine.replaceFirst(targetStr, key);
+                            String originLine = newLine;
+                            newLine = newLine.replaceFirst(targetStr, key);
+                            if (originLine.trim().equals(newLine.trim())) {
+                                String preStr = newLine.substring(0, newLine.indexOf(targetStr));
+                                String lastStr = newLine.substring(newLine.indexOf(targetStr) + targetStr.length());
+                                newLine = preStr + key + lastStr;
+                            }
                         }
                         fileContents.set(i, newLine);
                         isNeedWrite = true;
