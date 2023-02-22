@@ -5,15 +5,17 @@ import com.custom.genrateI18NTool.model.TransFile;
 import com.custom.genrateI18NTool.model.TransResult;
 import com.custom.genrateI18NTool.service.GenerateService;
 import org.apache.commons.io.FileUtils;
+import org.apache.commons.io.FilenameUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.text.StringEscapeUtils;
 import org.springframework.stereotype.Service;
 
 import java.io.File;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
+import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import static com.custom.genrateI18NTool.constant.Tag.*;
@@ -51,6 +53,10 @@ public class GenerateServiceImpl implements GenerateService {
             if (preContent.equals(fileContent)) {
                 continue;
             }
+            if (checkLocaleKeyExist(transFile.getDefaultLocalePath(), replaceTarget.getKey())) {
+                continue;
+            }
+
             localDefaultStr = buildLocaleStr(localDefaultStr, replaceTarget.getKey(), targetStr, false);
             localeEnStr = buildLocaleStr(localeEnStr, replaceTarget.getKey(), targetStr, true);
         }
@@ -59,10 +65,19 @@ public class GenerateServiceImpl implements GenerateService {
         transResult.setDefaultLocalePathContent(localDefaultStr.toString());
         transResult.setEnLocalePathContent(localeEnStr.toString());
         if (localDefaultStr.toString().replaceAll(LOCALE_TITLE.getValue(fileName), "").trim().equals("")) {
-            return null;
+            transResult.setDefaultLocalePathContent("");
+            transResult.setEnLocalePathContent("");
         }
 
         return transResult;
+    }
+
+    private boolean checkLocaleKeyExist(String defaultLocalePath, String key) {
+        String localeContent = getTransFileContent(defaultLocalePath, "UTF-8");
+        if (StringUtils.isBlank(localeContent)) {
+            return false;
+        }
+        return localeContent.contains(key+"=");
     }
 
     @Override
@@ -77,17 +92,171 @@ public class GenerateServiceImpl implements GenerateService {
     @Override
     public boolean commitChange(TransResult transResult) {
         boolean result;
-        result = writeFile(transResult.getFilePath(), transResult.getFileContent(), false);
-        if (!result) {
-            return false;
-        }
         result = writeFile(transResult.getDefaultLocalePath(), transResult.getDefaultLocalePathContent(), true);
         if (!result) {
             return false;
         }
         result = writeFile(transResult.getEnLocalePath(), transResult.getEnLocalePathContent(), true);
 
+        refactorJsp(new File(transResult.getFilePath()), new File(transResult.getDefaultLocalePath()));
+
+        try {
+            refactorAllJsp(transResult);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
         return result;
+    }
+
+    private void refactorAllJsp(TransResult transResult) throws Exception {
+        File file = new File(transResult.getFilePath());
+        if (!file.getParent().contains("jsp")) {
+            return;
+        }
+        String jspDirPath = getJspDirPath(file.getParent());
+        File jspDir = new File(jspDirPath);
+        findAllFilesInFolder(jspDir, new File(transResult.getDefaultLocalePath()));
+    }
+
+    private void findAllFilesInFolder(File folder, File localeFile) throws Exception {
+        for (File file : folder.listFiles()) {
+            if (!file.isDirectory()) {
+                refactorJsp(file, localeFile);
+            } else {
+                findAllFilesInFolder(file, localeFile);
+            }
+        }
+    }
+
+    private void refactorJsp(File file, File localeFile) {
+        String fe = FilenameUtils.getExtension(file.getName());
+        if (!fe.equals("jsp")) {
+            return;
+        }
+        String jspContent = getTransFileContent(file.getAbsolutePath(), "UTF-8");
+        if (!jspContent.contains("taglib prefix=\"s\"")) {
+            System.out.println(file.getAbsolutePath());
+            System.out.println("don't have struts tag plz check");
+            return;
+        }
+        String localeContent = getTransFileContent(localeFile.getAbsolutePath(), "UTF-8");
+
+        List<ReplaceTarget> replaceTargets = transLocale(localeContent);
+
+        for (ReplaceTarget replaceTarget : replaceTargets) {
+            String targetStr = replaceTarget.getTargetStr();
+            String key = S_TEXTFIELD.getValue(replaceTarget.getKey());
+            try {
+                List<String> fileContents = FileUtils.readLines(file, StandardCharsets.UTF_8);
+                boolean isNeedWrite = false;
+
+                for (int i = 0; i < fileContents.size(); i++) {
+                    String fileLine = fileContents.get(i);
+
+                    if (fileLine.contains(targetStr)) {
+
+                        if (isBrokenStr(fileLine, targetStr) || isInStrutsTag(fileLine, targetStr)) {
+                            continue;
+                        }
+
+                        String newLine = fileLine.replaceFirst(targetStr, key);
+                        while (newLine.contains(targetStr) && !(isBrokenStr(newLine, targetStr) || isInStrutsTag(newLine, targetStr))) {
+                            newLine = fileLine.replaceFirst(targetStr, key);
+                        }
+                        fileContents.set(i, newLine);
+                        isNeedWrite = true;
+                    }
+                }
+
+                if (isNeedWrite) {
+                    FileUtils.writeLines(file, StandardCharsets.UTF_8.name(), fileContents);
+                }
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
+    private boolean isInStrutsTag(String contentLine, String targetStr) {
+        boolean isInStrutsTag = false;
+        Pattern pattern = Pattern.compile("<s:.*((?!<>).)*[\\\"\\']>");
+        Matcher matcher = pattern.matcher(contentLine);
+
+        if (matcher.find()) {
+            for (int i = 0; i < matcher.groupCount(); i++) {
+                String groupStr = matcher.group(i);
+                if (groupStr.contains(targetStr)) {
+                    isInStrutsTag = true;
+                    break;
+                }
+            }
+        }
+
+        return isInStrutsTag;
+    }
+
+   private boolean isBrokenStr(String contentLine, String targetStr) {
+        int targetIndex = contentLine.indexOf(targetStr);
+
+        String preStr;
+        try {
+            preStr = String.valueOf(contentLine.charAt(targetIndex - 1));
+        } catch (Exception e) {
+            preStr = "";
+        }
+        boolean preIsChinese = isChinese(preStr);
+        if (preIsChinese) {
+            return true;
+        }
+
+        String afterStr;
+        try {
+            afterStr = String.valueOf(contentLine.charAt(targetIndex + targetStr.length()));
+        } catch (Exception e) {
+            afterStr = "";
+        }
+        boolean afterIsChinese = isChinese(afterStr);
+
+       if (afterIsChinese) {
+           return true;
+       }
+
+        return false;
+    }
+
+    private boolean isChinese(String str) {
+        Pattern pattern = Pattern.compile("[\\u4e00-\\u9fa5]");
+        Matcher matcher = pattern.matcher(str);
+        return matcher.find();
+    }
+
+    private List<ReplaceTarget> transLocale(String localeContent) {
+        List<ReplaceTarget> replaceTargets = new ArrayList<>();
+
+        String[] localeContents = localeContent.split("#");
+        for (String str: localeContents) {
+            if (!str.contains("=")) {
+                continue;
+            }
+            String replaceTargetStr = str.substring(0, str.indexOf("\n")).trim();
+            String replaceKey = str.substring(str.indexOf("\n"), str.indexOf("=")).trim();
+
+            ReplaceTarget replaceTarget = new ReplaceTarget();
+            replaceTarget.setTargetStr(replaceTargetStr);
+            replaceTarget.setKey(replaceKey);
+            replaceTargets.add(replaceTarget);
+        }
+
+        return replaceTargets.stream().sorted((o1, o2) -> o2.getTargetStr().length() - o1.getTargetStr().length()).collect(Collectors.toList());
+    }
+
+    private String getJspDirPath(String path) {
+        File file = new File(path);
+        if (file.getParent().endsWith("jsp")) {
+            return file.getParent();
+        }
+
+        return getJspDirPath(file.getParent());
     }
 
     @Override

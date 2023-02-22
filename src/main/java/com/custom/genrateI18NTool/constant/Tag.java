@@ -2,7 +2,7 @@ package com.custom.genrateI18NTool.constant;
 
 public enum Tag {
 
-    S_TEXTFIELD("<s:text name=\"%s\" />"),
+    S_TEXTFIELD("<s:text name='%s' />"),
     LOCALE_TITLE("\n### %s ###\n"),
     LOCALE_ORIGIN_STR("#%s\n");
 
