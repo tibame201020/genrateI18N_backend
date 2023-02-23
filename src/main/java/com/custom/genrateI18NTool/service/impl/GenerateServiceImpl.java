@@ -31,6 +31,10 @@ public class GenerateServiceImpl implements GenerateService {
         transResult.setEnLocalePath(transFile.getEnLocalePath());
 
         ReplaceTarget[] replaceTargets = transFile.getReplaceTargets();
+
+        //key加工
+        replaceTargets = processingReplaceTarget(replaceTargets, transFile.getDefaultLocalePath(), transFile.getPath());
+
         String fileContent = getTransFileContent(transFile.getPath(), transFile.getCharset());
         String fileName = new File(transFile.getPath()).getName();
 
@@ -70,6 +74,32 @@ public class GenerateServiceImpl implements GenerateService {
         }
 
         return transResult;
+    }
+
+    private ReplaceTarget[] processingReplaceTarget(ReplaceTarget[] replaceTargets, String defaultLocalePath, String jspPath) {
+        List<ReplaceTarget> processingReplaceTargets = new ArrayList<>();
+        String localeContent = getTransFileContent(defaultLocalePath, "UTF-8");
+        List<ReplaceTarget> localeReplaceTargets = transLocale(localeContent);
+        long tmpCount = 0;
+
+        for (ReplaceTarget replaceTarget : replaceTargets) {
+            if ((replaceTarget.getKey().indexOf("..") == replaceTarget.getKey().lastIndexOf("..")) && replaceTarget.getKey().contains("msg")) {
+                String system = replaceTarget.getKey().split("\\.\\.")[0];
+                String jspName = new File(jspPath).getName().substring(0, new File(jspPath).getName().indexOf(".jsp"));
+                String msg = replaceTarget.getKey().split("\\.\\.")[1];
+                String templateKey = system + "." + jspName + "." + msg;
+                long templateKeyCount = localeReplaceTargets.stream().filter(replaceTargetInlocale -> replaceTargetInlocale.getKey().contains(templateKey)).count();
+                tmpCount ++;
+                templateKeyCount = templateKeyCount + tmpCount;
+
+                String newKey = templateKey + templateKeyCount;
+                replaceTarget.setKey(newKey);
+                processingReplaceTargets.add(replaceTarget);
+            } else {
+                processingReplaceTargets.add(replaceTarget);
+            }
+        }
+        return processingReplaceTargets.stream().toArray(ReplaceTarget[]::new);
     }
 
     private boolean checkLocaleKeyExist(String defaultLocalePath, String key) {
@@ -156,12 +186,12 @@ public class GenerateServiceImpl implements GenerateService {
 
                     if (fileLine.contains(targetStr)) {
 
-                        if (isBrokenStr(fileLine, targetStr) || isInStrutsTag(fileLine, targetStr)) {
+                        if (isBrokenStr(fileLine, targetStr) || isInStrutsTag(fileLine, targetStr) || isAnnotation(fileLine)) {
                             continue;
                         }
 
                         String newLine = fileLine.replaceFirst(targetStr, key);
-                        while (newLine.contains(targetStr) && !(isBrokenStr(newLine, targetStr) || isInStrutsTag(newLine, targetStr))) {
+                        while (newLine.contains(targetStr) && !(isBrokenStr(newLine, targetStr) || isInStrutsTag(newLine, targetStr) || isAnnotation(fileLine))) {
                             String originLine = newLine;
                             newLine = newLine.replaceFirst(targetStr, key);
                             if (originLine.trim().equals(newLine.trim())) {
@@ -181,6 +211,19 @@ public class GenerateServiceImpl implements GenerateService {
             } catch (Exception ignored) {
             }
         }
+    }
+
+    private boolean isAnnotation(String contentLine) {
+        boolean isAnnotation = false;
+
+        String[] annotationArray = new String[] { "<!--" , "-->", "//-->", "//", "<%", "%>" };
+        for (String annotation : annotationArray) {
+            if (contentLine.contains(annotation)) {
+                isAnnotation = true;
+                break;
+            }
+        }
+        return isAnnotation;
     }
 
     private boolean isInStrutsTag(String contentLine, String targetStr) {
